@@ -29,8 +29,8 @@ static void trabalharSerraria(Jogador *j) {
     if (j->energia >= 25) {
         j->dinheiro += 3.50f;
         j->energia -= 30;
-        j->fome -= 20;
-        j->sede -= 25;
+        j->fome -= 10;
+        j->sede -= 14;
         if (j->fome < 0) j->fome = 0;
         if (j->sede < 0) j->sede = 0;
     }
@@ -40,7 +40,9 @@ static void cortarLenha(Jogador *j) {
     if (j->energia >= 20) {
         j->madeira += 2;
         j->energia -= 20;
-        j->sede -= 20;
+        j->fome -= 7;
+        j->sede -= 12;
+        if (j->fome < 0) j->fome = 0;
         if (j->sede < 0) j->sede = 0;
     }
 }
@@ -48,14 +50,14 @@ static void cortarLenha(Jogador *j) {
 static void comprarComida(Jogador *j) {
     if (j->dinheiro >= 1.50f) {
         j->dinheiro -= 1.50f;
-        j->fome = (j->fome + 40 > 100) ? 100 : j->fome + 40;
+        j->fome = (j->fome + 30 > 100) ? 100 : j->fome + 30;
     }
 }
 
 static void comprarAgua(Jogador *j) {
     if (j->dinheiro >= 1.00f) {
         j->dinheiro -= 1.00f;
-        j->sede = (j->sede + 50 > 100) ? 100 : j->sede + 50;
+        j->sede = (j->sede + 40 > 100) ? 100 : j->sede + 40;
     }
 }
 
@@ -72,12 +74,12 @@ static void construirAbrigo(Jogador *j) {
 static void descansar(Jogador *j) {
     if (j->nivelAbrigo == 0) {
         j->energia = 100;
-        j->fome -= 15;
-        j->sede -= 15;
+        j->fome -= 6;
+        j->sede -= 8;
     } else {
         j->energia = 100;
-        j->fome -= (j->nivelAbrigo == 2) ? 5 : 10;
-        j->sede -= (j->nivelAbrigo == 2) ? 5 : 10;
+        j->fome -= (j->nivelAbrigo == 2) ? 3 : 5;
+        j->sede -= (j->nivelAbrigo == 2) ? 3 : 6;
     }
 
     if (j->fome < 0) j->fome = 0;
@@ -85,18 +87,28 @@ static void descansar(Jogador *j) {
 }
 
 static void consumirTurno(Jogador *j, int dia, float clima) {
-    int desgaste = 4;
+    int fomePerTurno = 1;
+    int sedePerTurno = 2;
+    int energiaPerTurno = 1;
+
     if (dia % 2 == 0) {
-        desgaste += 1;
+        fomePerTurno += 1;
     }
 
     if (clima > 0.75f) {
-        desgaste += 2;
+        fomePerTurno += 1;
+        sedePerTurno += 2;
+        energiaPerTurno += 1;
     }
 
-    j->fome = (j->fome - (4 + desgaste / 2) < 0) ? 0 : j->fome - (4 + desgaste / 2);
-    j->sede = (j->sede - (5 + desgaste) < 0) ? 0 : j->sede - (5 + desgaste);
-    j->energia = (j->energia - (2 + desgaste / 3) < 0) ? 0 : j->energia - (2 + desgaste / 3);
+    if (j->nivelAbrigo == 0) {
+        sedePerTurno += 1;
+        energiaPerTurno += 1;
+    }
+
+    j->fome = (j->fome - fomePerTurno < 0) ? 0 : j->fome - fomePerTurno;
+    j->sede = (j->sede - sedePerTurno < 0) ? 0 : j->sede - sedePerTurno;
+    j->energia = (j->energia - energiaPerTurno < 0) ? 0 : j->energia - energiaPerTurno;
 }
 
 static const char *descreverAbrigo(int nivel) {
@@ -135,7 +147,7 @@ int main(void) {
 
         if (!gameOver) {
             acumuladorTempo += GetFrameTime();
-            if (acumuladorTempo >= 1.80f) {
+            if (acumuladorTempo >= 2.75f) {
                 clima += 0.05f;
                 if (clima > 1.0f) clima = 0.0f;
                 consumirTurno(&jogador, dia, clima);

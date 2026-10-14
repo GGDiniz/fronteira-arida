@@ -9,21 +9,38 @@ Protótipo de jogo em C utilizando Raylib com foco em sobrevivência no Velho Oe
 - Coletar madeira e construir abrigo
 - Evoluir da condição de forasteiro para moradia estável
 
-## Como compilar
+## Como rodar no Windows
 
-1. Baixe o pacote oficial do Raylib para Windows MinGW a partir do GitHub Releases.
-2. Extraia em uma pasta local, por exemplo `C:/raylib`.
-3. Ajuste o caminho abaixo para a pasta `include` e `lib` do Raylib.
+1. Instale o MinGW/WinLibs (se ainda nao tiver):
+
+```bat
+winget install --id BrechtSanders.WinLibs.MCF.UCRT -e
+```
+
+2. Abra um novo terminal e baixe o Raylib oficial do GitHub:
+
+```bat
+mkdir deps
+curl -L -o deps\raylib-6.0_win64_mingw-w64.zip https://github.com/raysan5/raylib/releases/download/6.0/raylib-6.0_win64_mingw-w64.zip
+tar -xf deps\raylib-6.0_win64_mingw-w64.zip -C deps
+```
+
+3. Compile o jogo manualmente:
+
+```bat
+set PATH=C:\Users\SEU_USUARIO\AppData\Local\Microsoft\WinGet\Packages\BrechtSanders.WinLibs.MCF.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\mingw64\bin;%PATH%
+mkdir build
+gcc src\main.c -I deps\raylib-6.0_win64_mingw-w64\include -L deps\raylib-6.0_win64_mingw-w64\lib -o build\fronteira-arida.exe -lraylib -lopengl32 -lgdi32 -lwinmm
+copy deps\raylib-6.0_win64_mingw-w64\lib\raylib.dll build\
+```
+
 4. Execute:
 
 ```bat
-gcc src\main.c -I C:\raylib\include -L C:\raylib\lib -lraylib -lopengl32 -lgdi32 -lwinmm -o build\fronteira-arida.exe
-copy C:\raylib\lib\raylib.dll build\
+build\fronteira-arida.exe
 ```
 
-## Como executar
-
-Basta abrir o arquivo `build\fronteira-arida.exe`.
+Se o Windows bloquear o `.bat`, use os comandos acima diretamente no CMD.
 
 ## Mecânicas implementadas
 
