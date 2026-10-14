@@ -1,65 +1,51 @@
 # Fronteira Árida
 
-Versão atual: sandbox de sobrevivência com gameplay inspirado em Minecraft, focado em exploração, coleta, trabalho e construção da vida do protagonista no Velho Oeste.
+Protótipo 3D de sobrevivência em blocos, feito em C com Raylib. A câmera é em primeira pessoa: explore o Oeste, recolha materiais mirando nos blocos, trabalhe na serraria e construa seu próprio abrigo colocando blocos no mundo.
 
-## Objetivo
+## Controles
 
-- Explorar o mapa em busca de recursos
-- Minerar terra, pedra, madeira e materiais de construção
-- Trabalhar na serraria para ganhar dinheiro
-- Construir abrigo e evoluir a base do personagem
-- Sobreviver com fome, sede e energia
+- **WASD**: andar
+- **Mouse**: olhar ao redor (o cursor fica capturado durante o jogo)
+- **Espaço**: pular
+- **Shift esquerdo**: correr
+- **Botão esquerdo**: minerar o bloco no centro da mira
+- **Botão direito**: colocar o bloco selecionado ao lado do bloco mirado
+- **1–5 / roda do mouse**: selecionar material da barra rápida
+- **E**: trabalhar perto da serraria e receber dinheiro
+- **C**: transformar um tronco em quatro tábuas na serraria
+- **F**: comprar comida
+- **G**: comprar água
+- **R**: descansar e recuperar vigor
+- **Enter**: recomeçar depois de morrer
 
-## Como rodar no Windows
+## Rodar no Windows
 
-1. Instale o MinGW/WinLibs (se ainda não tiver):
+1. Instale o MinGW/WinLibs, caso ainda não tenha:
 
 ```bat
 winget install --id BrechtSanders.WinLibs.MCF.UCRT -e
 ```
 
-2. Baixe o Raylib oficial do GitHub:
+2. Baixe o pacote Raylib 6.0 para MinGW e extraia-o conforme o caminho esperado pelo `build.bat`, ou execute o próprio script para baixar e compilar:
 
 ```bat
-mkdir deps
-curl -L -o deps\raylib-6.0_win64_mingw-w64.zip https://github.com/raysan5/raylib/releases/download/6.0/raylib-6.0_win64_mingw-w64.zip
-tar -xf deps\raylib-6.0_win64_mingw-w64.zip -C deps
+build.bat
+run.bat
 ```
 
-3. Compile o projeto:
+Se o terminal bloquear os arquivos `.bat`, execute os comandos pelo CMD ou use o comando de compilação abaixo, ajustando os caminhos ao local das suas dependências:
 
 ```bat
-set PATH=C:\Users\SEU_USUARIO\AppData\Local\Microsoft\WinGet\Packages\BrechtSanders.WinLibs.MCF.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\mingw64\bin;%PATH%
-mkdir build
-gcc src\main.c -I deps\raylib-6.0_win64_mingw-w64\include -L deps\raylib-6.0_win64_mingw-w64\lib -o build\fronteira-arida.exe -lraylib -lopengl32 -lgdi32 -lwinmm
-copy deps\raylib-6.0_win64_mingw-w64\lib\raylib.dll build\
+gcc src\main.c -I deps\raylib-win64\raylib-6.0_win64_mingw-w64\include -L deps\raylib-win64\raylib-6.0_win64_mingw-w64\lib -o build\fronteira-arida.exe -lraylib -lopengl32 -lgdi32 -lwinmm -lm
+copy deps\raylib-win64\raylib-6.0_win64_mingw-w64\lib\raylib.dll build\
 ```
 
-4. Execute:
+## Sistemas do protótipo
 
-```bat
-build\fronteira-arida.exe
-```
-
-## Controles
-
-- WASD: movimentação
-- Mouse esquerdo: minerar bloco
-- Mouse direito: colocar bloco
-- 1 a 5: trocar item no hotbar
-- E: trabalhar na serraria
-- F: comprar comida
-- R: descansar
-- B: construir abrigo
-- Enter: reiniciar ao morrer
-
-## Mecânicas implementadas
-
-- Sistema de sobrevivência com fome, sede e energia
-- Mundo em blocos com terreno, água, árvores e pedras
-- Coleta de recursos diretamente pelo mundo
-- Hotbar com materiais para construir
-- Sistema de trabalho para ganhar dinheiro
-- Construção de abrigo para evoluir a sobrevivência
-- Ciclo de dia
-- Visual em blocos com estética low-poly e estilo sandbox
+- Mundo voxel 3D com terreno gerado, árvores, água, região arenosa e serraria
+- Movimento em primeira pessoa, pulo, gravidade e colisão com blocos
+- Mineração e colocação de blocos com alcance limitado
+- Inventário rápido com terra, pedra, troncos, tábuas e areia
+- Trabalho e fabricação de tábuas na serraria
+- Compra de comida e água usando dinheiro
+- Fome, sede, vigor e ciclo de dia

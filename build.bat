@@ -31,7 +31,7 @@ if not exist "%RAYLIB_DIR%\lib\libraylib.a" (
     exit /b 1
 )
 
-gcc "%ROOT%src\main.c" -I "%RAYLIB_DIR%\include" -L "%RAYLIB_DIR%\lib" -o "%OUT_DIR%\fronteira-arida.exe" -lraylib -lopengl32 -lgdi32 -lwinmm
+gcc "%ROOT%src\main.c" -I "%RAYLIB_DIR%\include" -L "%RAYLIB_DIR%\lib" -o "%OUT_DIR%\fronteira-arida.exe" -lraylib -lopengl32 -lgdi32 -lwinmm -lm
 if errorlevel 1 (
     echo Erro ao compilar o jogo.
     exit /b 1
