@@ -50,3 +50,4 @@ Se o Windows bloquear o `.bat`, use os comandos acima diretamente no CMD.
 - Botões de ação para serraria, coleta, compra de mantimentos, descanso e construção
 - Condição de game over por exaustão, fome ou sede
 - Ciclo de tempo e clima simples
+- Visual low-poly com céu, terreno, árvores, abrigo e personagem em cena

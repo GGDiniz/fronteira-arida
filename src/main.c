@@ -105,6 +105,78 @@ static const char *descreverAbrigo(int nivel) {
     return "Cabana de Toras Rustica";
 }
 
+static void drawLowPolySky(void) {
+    DrawRectangle(0, 0, SCREEN_WIDTH, 260, (Color){145, 180, 210, 255});
+    DrawRectangle(0, 260, SCREEN_WIDTH, SCREEN_HEIGHT - 260, (Color){102, 146, 95, 255});
+    DrawCircle(SCREEN_WIDTH - 120, 90, 52, (Color){255, 215, 120, 255});
+
+    DrawTriangle((Vector2){0, 260}, (Vector2){140, 150}, (Vector2){260, 260}, (Color){118, 139, 98, 255});
+    DrawTriangle((Vector2){180, 260}, (Vector2){360, 130}, (Vector2){540, 260}, (Color){100, 123, 89, 255});
+    DrawTriangle((Vector2){470, 260}, (Vector2){690, 160}, (Vector2){900, 260}, (Color){88, 109, 81, 255});
+}
+
+static void drawLowPolyTree(float x, float y, float scale) {
+    DrawRectangle(x, y, 10 * scale, 30 * scale, (Color){118, 83, 47, 255});
+    DrawTriangle((Vector2){x - 12 * scale, y + 15 * scale}, (Vector2){x + 5 * scale, y - 16 * scale}, (Vector2){x + 22 * scale, y + 15 * scale}, (Color){68, 130, 74, 255});
+    DrawTriangle((Vector2){x - 6 * scale, y + 8 * scale}, (Vector2){x + 5 * scale, y - 24 * scale}, (Vector2){x + 16 * scale, y + 8 * scale}, (Color){82, 152, 89, 255});
+}
+
+static void drawLowPolyShelter(int nivel) {
+    int baseX = 610;
+    int baseY = 330;
+
+    if (nivel == 0) {
+        DrawRectangle(baseX - 30, baseY + 20, 140, 24, (Color){120, 90, 62, 255});
+        DrawRectangle(baseX - 18, baseY + 42, 116, 26, (Color){161, 126, 80, 255});
+        return;
+    }
+
+    DrawRectangle(baseX, baseY, 170, 44, (Color){109, 77, 53, 255});
+    DrawTriangle((Vector2){baseX - 10, baseY + 44}, (Vector2){baseX + 85, baseY - 16}, (Vector2){baseX + 180, baseY + 44}, (Color){140, 104, 72, 255});
+    DrawRectangle(baseX + 18, baseY + 44, 30, 44, (Color){92, 118, 72, 255});
+    DrawRectangle(baseX + 116, baseY + 44, 30, 44, (Color){92, 118, 72, 255});
+
+    if (nivel >= 2) {
+        DrawRectangle(baseX + 40, baseY + 70, 90, 26, (Color){88, 69, 48, 255});
+        DrawTriangle((Vector2){baseX + 30, baseY + 96}, (Vector2){baseX + 85, baseY + 56}, (Vector2){baseX + 140, baseY + 96}, (Color){152, 111, 75, 255});
+    }
+}
+
+static void drawLowPolyPlayer(float x, float y) {
+    DrawRectangle(x - 16, y + 10, 32, 32, (Color){46, 52, 60, 255});
+    DrawTriangle((Vector2){x, y - 24}, (Vector2){x - 18, y + 2}, (Vector2){x + 18, y + 2}, (Color){75, 104, 142, 255});
+    DrawRectangle(x - 22, y + 42, 10, 18, (Color){46, 52, 60, 255});
+    DrawRectangle(x + 12, y + 42, 10, 18, (Color){46, 52, 60, 255});
+    DrawRectangle(x - 10, y + 68, 12, 24, (Color){46, 52, 60, 255});
+    DrawRectangle(x + 10, y + 68, 12, 24, (Color){46, 52, 60, 255});
+}
+
+static void drawLowPolyScene(const Jogador *j, int dia, float clima) {
+    drawLowPolySky();
+
+    DrawRectangle(0, 300, SCREEN_WIDTH, 350, (Color){132, 174, 112, 255});
+    DrawRectangle(0, 350, SCREEN_WIDTH, 150, (Color){105, 147, 90, 255});
+    DrawRectangle(0, 440, SCREEN_WIDTH, 210, (Color){79, 110, 74, 255});
+
+    DrawTriangle((Vector2){0, 340}, (Vector2){170, 200}, (Vector2){320, 340}, (Color){88, 100, 70, 255});
+    DrawTriangle((Vector2){260, 340}, (Vector2){520, 180}, (Vector2){690, 340}, (Color){95, 110, 76, 255});
+    DrawTriangle((Vector2){610, 340}, (Vector2){810, 210}, (Vector2){900, 340}, (Color){83, 95, 68, 255});
+
+    DrawRectangle(0, 430, SCREEN_WIDTH, 30, (Color){224, 201, 124, 255});
+
+    drawLowPolyTree(110, 350, 1.1f);
+    drawLowPolyTree(210, 370, 1.4f);
+    drawLowPolyTree(760, 355, 1.2f);
+    drawLowPolyTree(820, 380, 1.6f);
+
+    drawLowPolyShelter(j->nivelAbrigo);
+    drawLowPolyPlayer(260, 295);
+
+    DrawRectangle(40, 30, 250, 58, (Color){38, 42, 35, 200});
+    DrawText(TextFormat("DIA %d | CLIMA %d%%", dia, (int)(clima * 100.0f)), 58, 48, 18, WHITE);
+    DrawText(TextFormat("FOME %d | SEDE %d | ENERGIA %d", j->fome, j->sede, j->energia), 58, 68, 14, WHITE);
+}
+
 int main(void) {
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Fronteira Arida - Velho Oeste (Prototipo Raylib)");
     SetTargetFPS(60);
@@ -159,6 +231,7 @@ int main(void) {
         ClearBackground(corFundo);
 
         if (!gameOver) {
+            drawLowPolyScene(&jogador, dia, clima);
             DrawText("FRONTEIRA ARIDA - SIMULADOR DE SOBREVIVENCIA", 50, 30, 22, corTextoEscuro);
             DrawText("Versao Grafica em C (Raylib)", 50, 55, 14, DARKGRAY);
 
