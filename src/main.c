@@ -1,296 +1,498 @@
 #include "raylib.h"
+#include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
-#define SCREEN_WIDTH 900
-#define SCREEN_HEIGHT 650
+#define SCREEN_WIDTH 1280
+#define SCREEN_HEIGHT 720
+#define TILE_SIZE 32
+#define WORLD_W 120
+#define WORLD_H 32
+#define PLAYER_WIDTH 18
+#define PLAYER_HEIGHT 28
+
+enum BlockType {
+    BLOCK_EMPTY = 0,
+    BLOCK_GRASS,
+    BLOCK_DIRT,
+    BLOCK_STONE,
+    BLOCK_SAND,
+    BLOCK_WATER,
+    BLOCK_LOG,
+    BLOCK_LEAVES,
+    BLOCK_PLANK,
+    BLOCK_WALL,
+    BLOCK_ROOF,
+    BLOCK_COUNT
+};
+
+enum InventoryType {
+    INV_DIRT = 0,
+    INV_STONE,
+    INV_WOOD,
+    INV_PLANK,
+    INV_WALL,
+    INV_COUNT
+};
 
 typedef struct {
-    char nome[50];
-    float dinheiro;
-    int fome;
-    int sede;
-    int energia;
-    int madeira;
-    int nivelAbrigo;
-} Jogador;
+    int tiles[WORLD_H][WORLD_W];
+} World;
 
-static void resetJogo(Jogador *j) {
-    strcpy(j->nome, "Arthur (Forasteiro)");
-    j->dinheiro = 2.00f;
-    j->fome = 100;
-    j->sede = 100;
-    j->energia = 100;
-    j->madeira = 0;
-    j->nivelAbrigo = 0;
+typedef struct {
+    float x;
+    float y;
+} Player;
+
+typedef struct {
+    Player player;
+    float hunger;
+    float thirst;
+    float energy;
+    float money;
+    int inventory[INV_COUNT];
+    int selectedSlot;
+    int day;
+    float dayTime;
+    int houseLevel;
+    bool gameOver;
+} Game;
+
+static bool isSolidTile(int tile) {
+    return tile == BLOCK_GRASS || tile == BLOCK_DIRT || tile == BLOCK_STONE || tile == BLOCK_SAND ||
+           tile == BLOCK_LOG || tile == BLOCK_LEAVES || tile == BLOCK_PLANK || tile == BLOCK_WALL ||
+           tile == BLOCK_ROOF;
 }
 
-static void trabalharSerraria(Jogador *j) {
-    if (j->energia >= 25) {
-        j->dinheiro += 3.50f;
-        j->energia -= 30;
-        j->fome -= 20;
-        j->sede -= 25;
-        if (j->fome < 0) j->fome = 0;
-        if (j->sede < 0) j->sede = 0;
+static int tileToInventory(int tile) {
+    switch (tile) {
+        case BLOCK_DIRT: return INV_DIRT;
+        case BLOCK_STONE: return INV_STONE;
+        case BLOCK_LOG: return INV_WOOD;
+        case BLOCK_PLANK: return INV_PLANK;
+        case BLOCK_WALL: return INV_WALL;
+        default: return -1;
     }
 }
 
-static void cortarLenha(Jogador *j) {
-    if (j->energia >= 20) {
-        j->madeira += 2;
-        j->energia -= 20;
-        j->sede -= 20;
-        if (j->sede < 0) j->sede = 0;
+static int selectedBlockType(int slot) {
+    switch (slot) {
+        case 0: return BLOCK_DIRT;
+        case 1: return BLOCK_STONE;
+        case 2: return BLOCK_LOG;
+        case 3: return BLOCK_PLANK;
+        case 4: return BLOCK_WALL;
+        default: return BLOCK_DIRT;
     }
 }
 
-static void comprarComida(Jogador *j) {
-    if (j->dinheiro >= 1.50f) {
-        j->dinheiro -= 1.50f;
-        j->fome = (j->fome + 40 > 100) ? 100 : j->fome + 40;
+static Color blockColor(int tile) {
+    switch (tile) {
+        case BLOCK_GRASS: return (Color){92, 154, 82, 255};
+        case BLOCK_DIRT: return (Color){123, 90, 58, 255};
+        case BLOCK_STONE: return (Color){122, 122, 130, 255};
+        case BLOCK_SAND: return (Color){202, 180, 100, 255};
+        case BLOCK_WATER: return (Color){62, 128, 198, 200};
+        case BLOCK_LOG: return (Color){118, 82, 45, 255};
+        case BLOCK_LEAVES: return (Color){62, 140, 64, 255};
+        case BLOCK_PLANK: return (Color){160, 117, 70, 255};
+        case BLOCK_WALL: return (Color){132, 111, 94, 255};
+        case BLOCK_ROOF: return (Color){161, 115, 70, 255};
+        default: return (Color){0, 0, 0, 0};
     }
 }
 
-static void comprarAgua(Jogador *j) {
-    if (j->dinheiro >= 1.00f) {
-        j->dinheiro -= 1.00f;
-        j->sede = (j->sede + 50 > 100) ? 100 : j->sede + 50;
-    }
+static bool isInsideMap(int x, int y) {
+    return x >= 0 && x < WORLD_W && y >= 0 && y < WORLD_H;
 }
 
-static void construirAbrigo(Jogador *j) {
-    if (j->nivelAbrigo == 0 && j->madeira >= 4) {
-        j->madeira -= 4;
-        j->nivelAbrigo = 1;
-    } else if (j->nivelAbrigo == 1 && j->madeira >= 10) {
-        j->madeira -= 10;
-        j->nivelAbrigo = 2;
-    }
-}
+static bool isBlockedAt(World *world, float px, float py, float w, float h) {
+    int left = (int)(px / TILE_SIZE);
+    int right = (int)((px + w - 1.0f) / TILE_SIZE);
+    int top = (int)(py / TILE_SIZE);
+    int bottom = (int)((py + h - 1.0f) / TILE_SIZE);
 
-static void descansar(Jogador *j) {
-    if (j->nivelAbrigo == 0) {
-        j->energia = 100;
-        j->fome -= 15;
-        j->sede -= 15;
-    } else {
-        j->energia = 100;
-        j->fome -= (j->nivelAbrigo == 2) ? 5 : 10;
-        j->sede -= (j->nivelAbrigo == 2) ? 5 : 10;
-    }
-
-    if (j->fome < 0) j->fome = 0;
-    if (j->sede < 0) j->sede = 0;
-}
-
-static void consumirTurno(Jogador *j, int dia, float clima) {
-    int desgaste = 4;
-    if (dia % 2 == 0) {
-        desgaste += 1;
-    }
-
-    if (clima > 0.75f) {
-        desgaste += 2;
-    }
-
-    j->fome = (j->fome - (4 + desgaste / 2) < 0) ? 0 : j->fome - (4 + desgaste / 2);
-    j->sede = (j->sede - (5 + desgaste) < 0) ? 0 : j->sede - (5 + desgaste);
-    j->energia = (j->energia - (2 + desgaste / 3) < 0) ? 0 : j->energia - (2 + desgaste / 3);
-}
-
-static const char *descreverAbrigo(int nivel) {
-    if (nivel == 0) return "Nenhum (Ao relento)";
-    if (nivel == 1) return "Acampamento de Lona";
-    return "Cabana de Toras Rustica";
-}
-
-static void drawLowPolySky(void) {
-    DrawRectangle(0, 0, SCREEN_WIDTH, 260, (Color){145, 180, 210, 255});
-    DrawRectangle(0, 260, SCREEN_WIDTH, SCREEN_HEIGHT - 260, (Color){102, 146, 95, 255});
-    DrawCircle(SCREEN_WIDTH - 120, 90, 52, (Color){255, 215, 120, 255});
-
-    DrawTriangle((Vector2){0, 260}, (Vector2){140, 150}, (Vector2){260, 260}, (Color){118, 139, 98, 255});
-    DrawTriangle((Vector2){180, 260}, (Vector2){360, 130}, (Vector2){540, 260}, (Color){100, 123, 89, 255});
-    DrawTriangle((Vector2){470, 260}, (Vector2){690, 160}, (Vector2){900, 260}, (Color){88, 109, 81, 255});
-}
-
-static void drawLowPolyTree(float x, float y, float scale) {
-    DrawRectangle(x, y, 10 * scale, 30 * scale, (Color){118, 83, 47, 255});
-    DrawTriangle((Vector2){x - 12 * scale, y + 15 * scale}, (Vector2){x + 5 * scale, y - 16 * scale}, (Vector2){x + 22 * scale, y + 15 * scale}, (Color){68, 130, 74, 255});
-    DrawTriangle((Vector2){x - 6 * scale, y + 8 * scale}, (Vector2){x + 5 * scale, y - 24 * scale}, (Vector2){x + 16 * scale, y + 8 * scale}, (Color){82, 152, 89, 255});
-}
-
-static void drawLowPolyShelter(int nivel) {
-    int baseX = 610;
-    int baseY = 330;
-
-    if (nivel == 0) {
-        DrawRectangle(baseX - 30, baseY + 20, 140, 24, (Color){120, 90, 62, 255});
-        DrawRectangle(baseX - 18, baseY + 42, 116, 26, (Color){161, 126, 80, 255});
-        return;
-    }
-
-    DrawRectangle(baseX, baseY, 170, 44, (Color){109, 77, 53, 255});
-    DrawTriangle((Vector2){baseX - 10, baseY + 44}, (Vector2){baseX + 85, baseY - 16}, (Vector2){baseX + 180, baseY + 44}, (Color){140, 104, 72, 255});
-    DrawRectangle(baseX + 18, baseY + 44, 30, 44, (Color){92, 118, 72, 255});
-    DrawRectangle(baseX + 116, baseY + 44, 30, 44, (Color){92, 118, 72, 255});
-
-    if (nivel >= 2) {
-        DrawRectangle(baseX + 40, baseY + 70, 90, 26, (Color){88, 69, 48, 255});
-        DrawTriangle((Vector2){baseX + 30, baseY + 96}, (Vector2){baseX + 85, baseY + 56}, (Vector2){baseX + 140, baseY + 96}, (Color){152, 111, 75, 255});
-    }
-}
-
-static void drawLowPolyPlayer(float x, float y) {
-    DrawRectangle(x - 16, y + 10, 32, 32, (Color){46, 52, 60, 255});
-    DrawTriangle((Vector2){x, y - 24}, (Vector2){x - 18, y + 2}, (Vector2){x + 18, y + 2}, (Color){75, 104, 142, 255});
-    DrawRectangle(x - 22, y + 42, 10, 18, (Color){46, 52, 60, 255});
-    DrawRectangle(x + 12, y + 42, 10, 18, (Color){46, 52, 60, 255});
-    DrawRectangle(x - 10, y + 68, 12, 24, (Color){46, 52, 60, 255});
-    DrawRectangle(x + 10, y + 68, 12, 24, (Color){46, 52, 60, 255});
-}
-
-static void drawLowPolyScene(const Jogador *j, int dia, float clima) {
-    drawLowPolySky();
-
-    DrawRectangle(0, 300, SCREEN_WIDTH, 350, (Color){132, 174, 112, 255});
-    DrawRectangle(0, 350, SCREEN_WIDTH, 150, (Color){105, 147, 90, 255});
-    DrawRectangle(0, 440, SCREEN_WIDTH, 210, (Color){79, 110, 74, 255});
-
-    DrawTriangle((Vector2){0, 340}, (Vector2){170, 200}, (Vector2){320, 340}, (Color){88, 100, 70, 255});
-    DrawTriangle((Vector2){260, 340}, (Vector2){520, 180}, (Vector2){690, 340}, (Color){95, 110, 76, 255});
-    DrawTriangle((Vector2){610, 340}, (Vector2){810, 210}, (Vector2){900, 340}, (Color){83, 95, 68, 255});
-
-    DrawRectangle(0, 430, SCREEN_WIDTH, 30, (Color){224, 201, 124, 255});
-
-    drawLowPolyTree(110, 350, 1.1f);
-    drawLowPolyTree(210, 370, 1.4f);
-    drawLowPolyTree(760, 355, 1.2f);
-    drawLowPolyTree(820, 380, 1.6f);
-
-    drawLowPolyShelter(j->nivelAbrigo);
-    drawLowPolyPlayer(260, 295);
-
-    DrawRectangle(40, 30, 250, 58, (Color){38, 42, 35, 200});
-    DrawText(TextFormat("DIA %d | CLIMA %d%%", dia, (int)(clima * 100.0f)), 58, 48, 18, WHITE);
-    DrawText(TextFormat("FOME %d | SEDE %d | ENERGIA %d", j->fome, j->sede, j->energia), 58, 68, 14, WHITE);
-}
-
-int main(void) {
-    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Fronteira Arida - Velho Oeste (Prototipo Raylib)");
-    SetTargetFPS(60);
-
-    Jogador jogador;
-    resetJogo(&jogador);
-
-    int dia = 1;
-    float clima = 0.35f;
-    float acumuladorTempo = 0.0f;
-    bool gameOver = false;
-
-    Color corFundo = {245, 235, 215, 255};
-    Color corPainel = {210, 180, 140, 255};
-    Color corTextoEscuro = {60, 42, 20, 255};
-    Color corBotao = {139, 69, 19, 255};
-
-    Rectangle btnSerraria = {50, 420, 360, 45};
-    Rectangle btnLenha = {50, 475, 360, 45};
-    Rectangle btnComida = {490, 420, 360, 45};
-    Rectangle btnAgua = {490, 475, 360, 45};
-    Rectangle btnAbrigo = {50, 530, 360, 45};
-    Rectangle btnDescanso = {490, 530, 360, 45};
-
-    while (!WindowShouldClose()) {
-        Vector2 posicaoMouse = GetMousePosition();
-        bool clicou = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
-
-        if (!gameOver) {
-            acumuladorTempo += GetFrameTime();
-            if (acumuladorTempo >= 1.80f) {
-                clima += 0.05f;
-                if (clima > 1.0f) clima = 0.0f;
-                consumirTurno(&jogador, dia, clima);
-                dia += 1;
-                acumuladorTempo = 0.0f;
+    for (int y = top; y <= bottom; y++) {
+        for (int x = left; x <= right; x++) {
+            if (!isInsideMap(x, y)) {
+                return true;
             }
+            int tile = world->tiles[y][x];
+            if (isSolidTile(tile)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
 
-            if (clicou) {
-                if (CheckCollisionPointRec(posicaoMouse, btnSerraria)) trabalharSerraria(&jogador);
-                if (CheckCollisionPointRec(posicaoMouse, btnLenha)) cortarLenha(&jogador);
-                if (CheckCollisionPointRec(posicaoMouse, btnComida)) comprarComida(&jogador);
-                if (CheckCollisionPointRec(posicaoMouse, btnAgua)) comprarAgua(&jogador);
-                if (CheckCollisionPointRec(posicaoMouse, btnAbrigo)) construirAbrigo(&jogador);
-                if (CheckCollisionPointRec(posicaoMouse, btnDescanso)) descansar(&jogador);
+static void movePlayer(Game *game, World *world, float moveX, float moveY, float dt) {
+    float newX = game->player.x + moveX * dt;
+    if (!isBlockedAt(world, newX, game->player.y, PLAYER_WIDTH, PLAYER_HEIGHT)) {
+        game->player.x = newX;
+    }
+
+    float newY = game->player.y + moveY * dt;
+    if (!isBlockedAt(world, game->player.x, newY, PLAYER_WIDTH, PLAYER_HEIGHT)) {
+        game->player.y = newY;
+    }
+}
+
+static int randomRange(int minValue, int maxValue) {
+    return minValue + (rand() % (maxValue - minValue + 1));
+}
+
+static void generateWorld(World *world) {
+    memset(world->tiles, BLOCK_EMPTY, sizeof(world->tiles));
+
+    for (int x = 0; x < WORLD_W; x++) {
+        int terrainHeight = 16 + (int)(sinf(x * 0.4f) * 3.0f + cosf(x * 0.2f) * 2.0f);
+
+        for (int y = 0; y < WORLD_H; y++) {
+            if (y < terrainHeight - 1) {
+                world->tiles[y][x] = BLOCK_STONE;
+            }
+            if (y < terrainHeight) {
+                world->tiles[y][x] = BLOCK_DIRT;
+            }
+            if (y == terrainHeight - 1) {
+                world->tiles[y][x] = BLOCK_GRASS;
             }
         }
 
-        gameOver = (jogador.fome <= 0 || jogador.sede <= 0 || jogador.energia <= 0);
+        if (x > 60 && x < 95) {
+            for (int y = terrainHeight; y < terrainHeight + 5; y++) {
+                if (y >= 0 && y < WORLD_H) {
+                    world->tiles[y][x] = BLOCK_WATER;
+                }
+            }
+        }
+    }
+
+    for (int x = 8; x < WORLD_W - 10; x += randomRange(6, 11)) {
+        if (randomRange(0, 100) > 35) {
+            int trunkHeight = randomRange(3, 5);
+            int baseY = 18 + (int)(sinf(x * 0.7f) * 2.0f);
+            for (int y = baseY - trunkHeight; y < baseY; y++) {
+                if (y >= 0 && y < WORLD_H) {
+                    world->tiles[y][x] = BLOCK_LOG;
+                }
+            }
+
+            int leafCenterY = baseY - trunkHeight - 1;
+            for (int y = leafCenterY - 1; y <= leafCenterY + 1; y++) {
+                for (int dx = -2; dx <= 2; dx++) {
+                    int leafX = x + dx;
+                    int leafY = y;
+                    if (leafX >= 0 && leafX < WORLD_W && leafY >= 0 && leafY < WORLD_H && world->tiles[leafY][leafX] == BLOCK_EMPTY) {
+                        world->tiles[leafY][leafX] = BLOCK_LEAVES;
+                    }
+                }
+            }
+        }
+    }
+
+    for (int x = 12; x < 28; x++) {
+        for (int y = 0; y < 5; y++) {
+            if (y == 0) {
+                world->tiles[20 + y][x] = BLOCK_SAND;
+            }
+        }
+    }
+}
+
+static void resetGame(Game *game, World *world) {
+    memset(game, 0, sizeof(*game));
+    game->player.x = 8.0f * TILE_SIZE;
+    game->player.y = 12.0f * TILE_SIZE;
+    game->hunger = 100.0f;
+    game->thirst = 100.0f;
+    game->energy = 100.0f;
+    game->money = 4.0f;
+    game->selectedSlot = 2;
+    game->day = 1;
+    game->dayTime = 0.0f;
+    game->houseLevel = 0;
+    game->inventory[INV_DIRT] = 8;
+    game->inventory[INV_STONE] = 2;
+    game->inventory[INV_WOOD] = 4;
+    game->inventory[INV_PLANK] = 0;
+    game->inventory[INV_WALL] = 0;
+
+    generateWorld(world);
+}
+
+static void buildHouse(Game *game, World *world) {
+    int centerX = (int)(game->player.x / TILE_SIZE);
+    int centerY = (int)(game->player.y / TILE_SIZE);
+
+    if (game->inventory[INV_WOOD] < 8 || game->inventory[INV_PLANK] < 6 || game->inventory[INV_WALL] < 4) {
+        return;
+    }
+
+    int startX = centerX - 2;
+    int startY = centerY - 2;
+    int buildCount = 0;
+
+    for (int y = 0; y < 5; y++) {
+        for (int x = 0; x < 6; x++) {
+            int wx = startX + x;
+            int wy = startY + y;
+            if (!isInsideMap(wx, wy)) {
+                continue;
+            }
+
+            bool isFrame = (x == 0 || x == 5 || y == 0 || y == 4);
+            if (isFrame && world->tiles[wy][wx] == BLOCK_EMPTY) {
+                world->tiles[wy][wx] = BLOCK_WALL;
+                buildCount++;
+            }
+            if (x == 2 && y == 1 && world->tiles[wy][wx] == BLOCK_EMPTY) {
+                world->tiles[wy][wx] = BLOCK_ROOF;
+                buildCount++;
+            }
+            if (x == 3 && y == 1 && world->tiles[wy][wx] == BLOCK_EMPTY) {
+                world->tiles[wy][wx] = BLOCK_ROOF;
+                buildCount++;
+            }
+        }
+    }
+
+    if (buildCount > 0) {
+        game->inventory[INV_WOOD] -= 8;
+        game->inventory[INV_PLANK] -= 6;
+        game->inventory[INV_WALL] -= 4;
+        game->houseLevel += 1;
+        game->money += 2.5f;
+    }
+}
+
+static void doWork(Game *game) {
+    if (game->energy < 20.0f) {
+        return;
+    }
+
+    int sawmillX = 8;
+    int sawmillY = 17;
+    int px = (int)(game->player.x / TILE_SIZE);
+    int py = (int)(game->player.y / TILE_SIZE);
+
+    if (abs(px - sawmillX) <= 4 && abs(py - sawmillY) <= 4) {
+        game->money += 3.5f;
+        game->inventory[INV_WOOD] += 2;
+        game->hunger -= 8.0f;
+        game->thirst -= 10.0f;
+        game->energy -= 16.0f;
+    }
+}
+
+static void eatFood(Game *game) {
+    if (game->money >= 2.0f) {
+        game->money -= 2.0f;
+        game->hunger = (game->hunger + 35.0f > 100.0f) ? 100.0f : game->hunger + 35.0f;
+        game->thirst -= 4.0f;
+    }
+}
+
+static void rest(Game *game) {
+    if (game->houseLevel > 0) {
+        game->energy = 100.0f;
+        game->hunger -= 12.0f;
+        game->thirst -= 12.0f;
+    }
+}
+
+static void drawWorld(World *world, Camera2D *camera, Game *game) {
+    BeginMode2D(*camera);
+
+    for (int y = 0; y < WORLD_H; y++) {
+        for (int x = 0; x < WORLD_W; x++) {
+            int tile = world->tiles[y][x];
+            if (tile == BLOCK_EMPTY) {
+                continue;
+            }
+
+            Rectangle rec = { (float)(x * TILE_SIZE), (float)(y * TILE_SIZE), (float)TILE_SIZE, (float)TILE_SIZE };
+            DrawRectangleRec(rec, blockColor(tile));
+
+            if (tile == BLOCK_WATER) {
+                DrawRectangleLinesEx(rec, 1, (Color){255, 255, 255, 80});
+            }
+        }
+    }
+
+    int targetTileX = (int)(GetScreenToWorld2D(GetMousePosition(), *camera).x / TILE_SIZE);
+    int targetTileY = (int)(GetScreenToWorld2D(GetMousePosition(), *camera).y / TILE_SIZE);
+    if (targetTileX >= 0 && targetTileX < WORLD_W && targetTileY >= 0 && targetTileY < WORLD_H) {
+        Rectangle selectRect = { (float)(targetTileX * TILE_SIZE), (float)(targetTileY * TILE_SIZE), (float)TILE_SIZE, (float)TILE_SIZE };
+        DrawRectangleLinesEx(selectRect, 2, YELLOW);
+    }
+
+    Vector2 p = { game->player.x, game->player.y };
+    DrawRectangle(p.x, p.y, PLAYER_WIDTH, PLAYER_HEIGHT, (Color){58, 99, 198, 255});
+    DrawRectangle(p.x + 4, p.y - 8, PLAYER_WIDTH - 8, 10, (Color){224, 198, 146, 255});
+    DrawRectangle(p.x + 5, p.y + PLAYER_HEIGHT, 5, 12, (Color){50, 50, 55, 255});
+    DrawRectangle(p.x + PLAYER_WIDTH - 10, p.y + PLAYER_HEIGHT, 5, 12, (Color){50, 50, 55, 255});
+
+    EndMode2D();
+}
+
+static void updateSelectedBlock(Game *game) {
+    if (IsKeyPressed(KEY_ONE)) game->selectedSlot = 0;
+    if (IsKeyPressed(KEY_TWO)) game->selectedSlot = 1;
+    if (IsKeyPressed(KEY_THREE)) game->selectedSlot = 2;
+    if (IsKeyPressed(KEY_FOUR)) game->selectedSlot = 3;
+    if (IsKeyPressed(KEY_FIVE)) game->selectedSlot = 4;
+}
+
+int main(void) {
+    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Fronteira Arida - Minecraft-like Survival");
+    SetTargetFPS(60);
+
+    srand((unsigned int)time(NULL));
+
+    World world;
+    Game game;
+    resetGame(&game, &world);
+
+    Camera2D camera = { 0 };
+    camera.zoom = 1.0f;
+    camera.offset = (Vector2){ SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f };
+
+    while (!WindowShouldClose()) {
+        float dt = GetFrameTime();
+
+        if (!game.gameOver) {
+            float moveX = (IsKeyDown(KEY_D) ? 1.0f : 0.0f) - (IsKeyDown(KEY_A) ? 1.0f : 0.0f);
+            float moveY = (IsKeyDown(KEY_S) ? 1.0f : 0.0f) - (IsKeyDown(KEY_W) ? 1.0f : 0.0f);
+
+            if (moveX != 0.0f || moveY != 0.0f) {
+                float length = sqrtf(moveX * moveX + moveY * moveY);
+                if (length > 0.0f) {
+                    moveX /= length;
+                    moveY /= length;
+                }
+                movePlayer(&game, &world, moveX, moveY, 180.0f * dt);
+            }
+
+            updateSelectedBlock(&game);
+
+            if (IsKeyPressed(KEY_E)) {
+                doWork(&game);
+            }
+
+            if (IsKeyPressed(KEY_F)) {
+                eatFood(&game);
+            }
+
+            if (IsKeyPressed(KEY_R)) {
+                rest(&game);
+            }
+
+            if (IsKeyPressed(KEY_B)) {
+                buildHouse(&game, &world);
+            }
+
+            game.dayTime += dt;
+            if (game.dayTime >= 45.0f) {
+                game.dayTime = 0.0f;
+                game.day += 1;
+            }
+
+            game.hunger -= dt * 0.7f;
+            game.thirst -= dt * 1.2f;
+            game.energy -= dt * ((game.thirst < 30.0f) ? 1.2f : 0.45f);
+
+            if (game.hunger < 0.0f) game.hunger = 0.0f;
+            if (game.thirst < 0.0f) game.thirst = 0.0f;
+            if (game.energy < 0.0f) game.energy = 0.0f;
+
+            if (game.hunger <= 0.0f || game.thirst <= 0.0f || game.energy <= 0.0f) {
+                game.gameOver = true;
+            }
+        }
+
+        camera.target.x = game.player.x;
+        camera.target.y = game.player.y;
+
+        Vector2 mouseWorld = GetScreenToWorld2D(GetMousePosition(), camera);
+        int tileX = (int)(mouseWorld.x / TILE_SIZE);
+        int tileY = (int)(mouseWorld.y / TILE_SIZE);
+
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+            if (tileX >= 0 && tileX < WORLD_W && tileY >= 0 && tileY < WORLD_H) {
+                int tile = world.tiles[tileY][tileX];
+                if (tile != BLOCK_EMPTY && abs(tileX - (int)(game.player.x / TILE_SIZE)) <= 5 && abs(tileY - (int)(game.player.y / TILE_SIZE)) <= 5) {
+                    int invIndex = tileToInventory(tile);
+                    if (invIndex >= 0) {
+                        world.tiles[tileY][tileX] = BLOCK_EMPTY;
+                        game.inventory[invIndex] += 1;
+                    }
+                }
+            }
+        }
+
+        if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
+            int selected = selectedBlockType(game.selectedSlot);
+            if (tileX >= 0 && tileX < WORLD_W && tileY >= 0 && tileY < WORLD_H) {
+                if (world.tiles[tileY][tileX] == BLOCK_EMPTY && abs(tileX - (int)(game.player.x / TILE_SIZE)) <= 5 && abs(tileY - (int)(game.player.y / TILE_SIZE)) <= 5) {
+                    int invIndex = -1;
+                    if (selected == BLOCK_DIRT) invIndex = INV_DIRT;
+                    else if (selected == BLOCK_STONE) invIndex = INV_STONE;
+                    else if (selected == BLOCK_LOG) invIndex = INV_WOOD;
+                    else if (selected == BLOCK_PLANK) invIndex = INV_PLANK;
+                    else if (selected == BLOCK_WALL) invIndex = INV_WALL;
+
+                    if (invIndex >= 0 && game.inventory[invIndex] > 0) {
+                        world.tiles[tileY][tileX] = selected;
+                        game.inventory[invIndex]--;
+                    }
+                }
+            }
+        }
+
+        if (game.gameOver && IsKeyPressed(KEY_ENTER)) {
+            resetGame(&game, &world);
+            game.gameOver = false;
+        }
 
         BeginDrawing();
-        ClearBackground(corFundo);
+        ClearBackground((Color){126, 180, 209, 255});
 
-        if (!gameOver) {
-            drawLowPolyScene(&jogador, dia, clima);
-            DrawText("FRONTEIRA ARIDA - SIMULADOR DE SOBREVIVENCIA", 50, 30, 22, corTextoEscuro);
-            DrawText("Versao Grafica em C (Raylib)", 50, 55, 14, DARKGRAY);
+        drawWorld(&world, &camera, &game);
 
-            DrawRectangle(50, 90, 800, 160, corPainel);
-            DrawRectangleLines(50, 90, 800, 160, corTextoEscuro);
+        DrawRectangle(14, 14, 360, 160, (Color){18, 22, 27, 200});
+        DrawText(TextFormat("DIA %d", game.day), 26, 26, 24, WHITE);
+        DrawText(TextFormat("FOME: %.0f%%", game.hunger), 26, 58, 20, (Color){255, 99, 71, 255});
+        DrawText(TextFormat("SEDE: %.0f%%", game.thirst), 26, 86, 20, (Color){77, 150, 255, 255});
+        DrawText(TextFormat("ENERGIA: %.0f%%", game.energy), 26, 114, 20, (Color){102, 204, 89, 255});
+        DrawText(TextFormat("DINHEIRO: $%.2f", game.money), 26, 142, 20, (Color){255, 214, 83, 255});
 
-            char buffer[128];
-            sprintf(buffer, "Forasteiro: %s | Dia: %d | Clima: %.0f%%", jogador.nome, dia, clima * 100.0f);
-            DrawText(buffer, 70, 110, 18, corTextoEscuro);
+        DrawRectangle(14, SCREEN_HEIGHT - 120, SCREEN_WIDTH - 28, 96, (Color){30, 30, 35, 220});
+        for (int i = 0; i < 5; i++) {
+            int slotX = 32 + i * 110;
+            int slotY = SCREEN_HEIGHT - 96;
+            int blockType = selectedBlockType(i);
+            Color slotColor = blockColor(blockType);
+            DrawRectangle(slotX, slotY, 80, 64, (Color){60, 60, 65, 255});
+            DrawRectangle(slotX + 4, slotY + 4, 72, 56, slotColor);
+            DrawText(TextFormat("%d", i + 1), slotX + 8, slotY + 6, 16, WHITE);
 
-            sprintf(buffer, "Dinheiro: $%.2f   |   Toras de Madeira: %d", jogador.dinheiro, jogador.madeira);
-            DrawText(buffer, 70, 140, 16, corTextoEscuro);
-
-            sprintf(buffer, "Abrigo: %s", descreverAbrigo(jogador.nivelAbrigo));
-            DrawText(buffer, 70, 165, 16, corTextoEscuro);
-
-            DrawText("Fome:", 70, 200, 14, corTextoEscuro);
-            DrawRectangle(130, 200, 200, 16, LIGHTGRAY);
-            DrawRectangle(130, 200, (int)(2.0f * jogador.fome), 16, RED);
-
-            DrawText("Sede:", 350, 200, 14, corTextoEscuro);
-            DrawRectangle(400, 200, 200, 16, LIGHTGRAY);
-            DrawRectangle(400, 200, (int)(2.0f * jogador.sede), 16, BLUE);
-
-            DrawText("Energia:", 620, 200, 14, corTextoEscuro);
-            DrawRectangle(690, 200, 140, 16, LIGHTGRAY);
-            DrawRectangle(690, 200, (int)(1.4f * jogador.energia), 16, GREEN);
-
-            DrawText("PAINEL DE ACOES (CLIQUE NOS BOTOES)", 50, 380, 16, corTextoEscuro);
-
-            DrawRectangleRec(btnSerraria, corBotao);
-            DrawText("1. Trabalhar na Serraria (Ganha $3.50)", btnSerraria.x + 15, btnSerraria.y + 14, 14, WHITE);
-
-            DrawRectangleRec(btnLenha, corBotao);
-            DrawText("2. Cortar Lenha na Floresta (+2 Toras)", btnLenha.x + 15, btnLenha.y + 14, 14, WHITE);
-
-            DrawRectangleRec(btnComida, corBotao);
-            DrawText("3. Comprar Comida no Saloon (-$1.50)", btnComida.x + 15, btnComida.y + 14, 14, WHITE);
-
-            DrawRectangleRec(btnAgua, corBotao);
-            DrawText("4. Comprar Agua Fresca (-$1.00)", btnAgua.x + 15, btnAgua.y + 14, 14, WHITE);
-
-            DrawRectangleRec(btnAbrigo, corBotao);
-            DrawText("5. Construir / Melhorar Abrigo (Usa Toras)", btnAbrigo.x + 15, btnAbrigo.y + 14, 14, WHITE);
-
-            DrawRectangleRec(btnDescanso, corBotao);
-            DrawText("6. Descansar no Abrigo (Recupera Energia)", btnDescanso.x + 15, btnDescanso.y + 14, 14, WHITE);
-        } else {
-            DrawText("VOCE MORREU NA FRONTEIRA...", SCREEN_WIDTH / 2 - 180, SCREEN_HEIGHT / 2 - 40, 22, RED);
-            DrawText("A fome ou a sede extrema cobraram seu preco nas terras secas.", SCREEN_WIDTH / 2 - 240, SCREEN_HEIGHT / 2, 14, DARKGRAY);
-            DrawText("Aperte ENTER para tentar novamente.", SCREEN_WIDTH / 2 - 120, SCREEN_HEIGHT / 2 + 40, 14, DARKGRAY);
-
-            if (IsKeyPressed(KEY_ENTER)) {
-                resetJogo(&jogador);
-                dia = 1;
-                clima = 0.35f;
-                acumuladorTempo = 0.0f;
-                gameOver = false;
+            if (i == game.selectedSlot) {
+                DrawRectangleLines(slotX - 2, slotY - 2, 84, 68, GOLD);
             }
+
+            DrawText(TextFormat("%d", game.inventory[(i == 0) ? INV_DIRT : (i == 1) ? INV_STONE : (i == 2) ? INV_WOOD : (i == 3) ? INV_PLANK : INV_WALL]), slotX + 8, slotY + 38, 16, WHITE);
+        }
+
+        DrawText("WASD = MOVER | E = TRABALHAR | F = COMPRAR COMIDA | R = DESCANSAR | B = CONSTRUIR | MOUSE = MINERAR / COLOCAR", 18, SCREEN_HEIGHT - 36, 14, WHITE);
+
+        if (game.gameOver) {
+            DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, (Color){0, 0, 0, 170});
+            DrawText("VOCÊ FALHOU NA FRONTEIRA...", SCREEN_WIDTH / 2 - 260, SCREEN_HEIGHT / 2 - 40, 28, RED);
+            DrawText("Pressione ENTER para recomeçar", SCREEN_WIDTH / 2 - 180, SCREEN_HEIGHT / 2 + 8, 20, WHITE);
         }
 
         EndDrawing();
