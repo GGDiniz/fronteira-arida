@@ -7,9 +7,13 @@
 
 #define SCREEN_WIDTH 1280
 #define SCREEN_HEIGHT 720
-#define WORLD_X 48
+#define WORLD_X 1024
 #define WORLD_Y 24
-#define WORLD_Z 48
+#define WORLD_Z 1024
+#define SECTOR_SIZE 16
+#define SECTOR_COUNT_X (WORLD_X / SECTOR_SIZE)
+#define SECTOR_COUNT_Z (WORLD_Z / SECTOR_SIZE)
+#define VIEW_SECTOR_RADIUS 1
 #define PLAYER_RADIUS 0.28f
 #define PLAYER_HEIGHT 1.8f
 #define INTERACTION_REACH 6.0f
@@ -40,6 +44,8 @@ enum InventoryType {
 
 typedef struct {
     unsigned char blocks[WORLD_Y][WORLD_Z][WORLD_X];
+    bool loaded[SECTOR_COUNT_Z][SECTOR_COUNT_X];
+    bool sawmillBuilt;
 } World;
 
 typedef struct {
@@ -76,6 +82,8 @@ static const char *slotNames[INV_COUNT] = {
     "TERRA", "PEDRA", "TRONCO", "TABUA", "AREIA"
 };
 
+static unsigned int worldSeed;
+
 static int clampInt(int value, int minValue, int maxValue) {
     if (value < minValue) return minValue;
     if (value > maxValue) return maxValue;
@@ -88,6 +96,7 @@ static bool inWorld(int x, int y, int z) {
 
 static int getBlock(const World *world, int x, int y, int z) {
     if (!inWorld(x, y, z)) return BLOCK_EMPTY;
+    if (!world->loaded[z / SECTOR_SIZE][x / SECTOR_SIZE]) return BLOCK_EMPTY;
     return world->blocks[y][z][x];
 }
 
@@ -141,9 +150,35 @@ static Color blockColor(int block) {
     }
 }
 
+static unsigned int hashCoordinates(int x, int z) {
+    unsigned int hash = (unsigned int)x * 374761393u + (unsigned int)z * 668265263u + worldSeed;
+    hash = (hash ^ (hash >> 13)) * 1274126177u;
+    return hash ^ (hash >> 16);
+}
+
+static float latticeNoise(int x, int z) {
+    return (float)(hashCoordinates(x, z) & 0x00ffffffu) / 8388607.5f - 1.0f;
+}
+
+static float smoothStep(float value) {
+    return value * value * (3.0f - 2.0f * value);
+}
+
+static float interpolatedNoise(float x, float z) {
+    int x0 = (int)floorf(x);
+    int z0 = (int)floorf(z);
+    float fx = smoothStep(x - (float)x0);
+    float fz = smoothStep(z - (float)z0);
+    float north = latticeNoise(x0, z0) * (1.0f - fx) + latticeNoise(x0 + 1, z0) * fx;
+    float south = latticeNoise(x0, z0 + 1) * (1.0f - fx) + latticeNoise(x0 + 1, z0 + 1) * fx;
+    return north * (1.0f - fz) + south * fz;
+}
+
 static int terrainHeight(int x, int z) {
-    float hills = sinf((float)x * 0.24f) * 1.2f + cosf((float)z * 0.20f) * 1.1f;
-    return clampInt(4 + (int)roundf(hills), 2, 7);
+    float broad = interpolatedNoise((float)x * 0.008f, (float)z * 0.008f);
+    float hills = interpolatedNoise((float)x * 0.035f, (float)z * 0.035f);
+    float detail = interpolatedNoise((float)x * 0.11f, (float)z * 0.11f);
+    return clampInt(7 + (int)roundf(broad * 4.0f + hills * 2.0f + detail * 0.7f), 2, 14);
 }
 
 static void setIfEmpty(World *world, int x, int y, int z, int block) {
@@ -171,51 +206,76 @@ static void buildSawmill(World *world) {
     setBlock(world, x0 + 3, floorY, z0 + 1, BLOCK_LOG);
 }
 
-static void generateWorld(World *world) {
-    memset(world, 0, sizeof(*world));
+static void generateSector(World *world, int sectorX, int sectorZ) {
+    if (sectorX < 0 || sectorX >= SECTOR_COUNT_X || sectorZ < 0 || sectorZ >= SECTOR_COUNT_Z ||
+        world->loaded[sectorZ][sectorX]) {
+        return;
+    }
 
-    for (int x = 0; x < WORLD_X; x++) {
-        for (int z = 0; z < WORLD_Z; z++) {
+    world->loaded[sectorZ][sectorX] = true;
+    int startX = sectorX * SECTOR_SIZE;
+    int endX = startX + SECTOR_SIZE;
+    int startZ = sectorZ * SECTOR_SIZE;
+    int endZ = startZ + SECTOR_SIZE;
+
+    for (int x = startX; x < endX; x++) {
+        for (int z = startZ; z < endZ; z++) {
             int height = terrainHeight(x, z);
+            bool desert = (x > 55 && x < 245 && z > 25 && z < 250) ||
+                          interpolatedNoise((float)x * 0.004f + 41.0f, (float)z * 0.004f - 17.0f) > 0.62f;
             for (int y = 0; y <= height; y++) {
-                int block = (y == height) ? BLOCK_GRASS : (y >= height - 3 ? BLOCK_DIRT : BLOCK_STONE);
-                if (x < 13 && z > 25 && y == height) block = BLOCK_SAND;
+                int block = (y == height) ? (desert ? BLOCK_SAND : BLOCK_GRASS) :
+                            (y >= height - 3 ? BLOCK_DIRT : BLOCK_STONE);
+                if (desert && y == height - 1) block = BLOCK_SAND;
                 setBlock(world, x, y, z, block);
             }
 
             if (x >= 29 && x <= 35 && z >= 25 && z <= 30 && height <= 5) {
                 setBlock(world, x, height + 1, z, BLOCK_WATER);
             }
-        }
-    }
 
-    for (int tree = 0; tree < 95; tree++) {
-        int x = 3 + rand() % (WORLD_X - 6);
-        int z = 3 + rand() % (WORLD_Z - 6);
-        if ((abs(x - 8) < 5 && abs(z - 8) < 5) ||
-            (x >= 11 && x <= 19 && z >= 10 && z <= 18) ||
-            (x >= 28 && x <= 36 && z >= 24 && z <= 31)) {
-            continue;
-        }
+            unsigned int treeHash = hashCoordinates(x, z);
+            bool nearStartingTown = x < 24 && z < 24;
+            bool nearWater = x >= 27 && x <= 37 && z >= 23 && z <= 32;
+            if (!desert && !nearStartingTown && !nearWater && (treeHash % 1000u) < 22u) {
+                int treeHeight = 3 + (int)((treeHash >> 10) % 3u);
+                int baseY = height + 1;
 
-        int baseY = terrainHeight(x, z) + 1;
-        int height = 3 + rand() % 3;
-        for (int y = 0; y < height; y++) setIfEmpty(world, x, baseY + y, z, BLOCK_LOG);
+                for (int y = 0; y < treeHeight; y++) {
+                    setIfEmpty(world, x, baseY + y, z, BLOCK_LOG);
+                }
 
-        int canopyY = baseY + height - 1;
-        for (int dy = -1; dy <= 2; dy++) {
-            int radius = (dy == 2) ? 1 : 2;
-            for (int dx = -radius; dx <= radius; dx++) {
-                for (int dz = -radius; dz <= radius; dz++) {
-                    if (abs(dx) + abs(dz) <= radius + 1) {
-                        setIfEmpty(world, x + dx, canopyY + dy, z + dz, BLOCK_LEAVES);
+                int canopyY = baseY + treeHeight - 1;
+                for (int dy = -1; dy <= 2; dy++) {
+                    int radius = (dy == 2) ? 1 : 2;
+                    for (int dx = -radius; dx <= radius; dx++) {
+                        for (int dz = -radius; dz <= radius; dz++) {
+                            if (abs(dx) + abs(dz) <= radius + 1) {
+                                setIfEmpty(world, x + dx, canopyY + dy, z + dz, BLOCK_LEAVES);
+                            }
+                        }
                     }
                 }
             }
         }
     }
 
-    buildSawmill(world);
+}
+
+static void loadSectorsAroundPlayer(World *world, float x, float z) {
+    int centerSectorX = (int)floorf(x) / SECTOR_SIZE;
+    int centerSectorZ = (int)floorf(z) / SECTOR_SIZE;
+
+    for (int sectorZ = centerSectorZ - VIEW_SECTOR_RADIUS; sectorZ <= centerSectorZ + VIEW_SECTOR_RADIUS; sectorZ++) {
+        for (int sectorX = centerSectorX - VIEW_SECTOR_RADIUS; sectorX <= centerSectorX + VIEW_SECTOR_RADIUS; sectorX++) {
+            generateSector(world, sectorX, sectorZ);
+        }
+    }
+
+    if (!world->sawmillBuilt && world->loaded[0][0] && world->loaded[0][1]) {
+        buildSawmill(world);
+        world->sawmillBuilt = true;
+    }
 }
 
 static void setMessage(Game *game, const char *text) {
@@ -223,9 +283,8 @@ static void setMessage(Game *game, const char *text) {
     game->messageTimer = 2.5f;
 }
 
-static void resetGame(Game *game, World *world) {
+static void resetGame(Game *game) {
     memset(game, 0, sizeof(*game));
-    generateWorld(world);
     game->player.feet = (Vector3){8.5f, (float)terrainHeight(8, 8) + 1.0f, 8.5f};
     game->player.yaw = 0.0f;
     game->player.pitch = 0.0f;
@@ -283,8 +342,8 @@ static void movePlayer(Game *game, const World *world, float forwardInput, float
     float speed = IsKeyDown(KEY_LEFT_SHIFT) ? 7.0f : 4.8f;
     float forwardX = sinf(game->player.yaw);
     float forwardZ = cosf(game->player.yaw);
-    float rightX = cosf(game->player.yaw);
-    float rightZ = -sinf(game->player.yaw);
+    float rightX = -cosf(game->player.yaw);
+    float rightZ = sinf(game->player.yaw);
     float dx = (forwardX * forwardInput + rightX * sideInput) * speed * dt;
     float dz = (forwardZ * forwardInput + rightZ * sideInput) * speed * dt;
 
@@ -461,10 +520,12 @@ static bool hasExposedFace(const World *world, int x, int y, int z) {
 }
 
 static void drawWorld(const World *world, const Game *game, const BlockTarget *target, bool hasTarget) {
-    int minX = (int)game->player.feet.x - 20;
-    int maxX = (int)game->player.feet.x + 20;
-    int minZ = (int)game->player.feet.z - 20;
-    int maxZ = (int)game->player.feet.z + 20;
+    int playerChunkX = (int)floorf(game->player.feet.x) / SECTOR_SIZE;
+    int playerChunkZ = (int)floorf(game->player.feet.z) / SECTOR_SIZE;
+    int minX = (playerChunkX - VIEW_SECTOR_RADIUS) * SECTOR_SIZE;
+    int maxX = (playerChunkX + VIEW_SECTOR_RADIUS + 1) * SECTOR_SIZE - 1;
+    int minZ = (playerChunkZ - VIEW_SECTOR_RADIUS) * SECTOR_SIZE;
+    int maxZ = (playerChunkZ + VIEW_SECTOR_RADIUS + 1) * SECTOR_SIZE - 1;
     minX = clampInt(minX, 0, WORLD_X - 1);
     maxX = clampInt(maxX, 0, WORLD_X - 1);
     minZ = clampInt(minZ, 0, WORLD_Z - 1);
@@ -587,9 +648,17 @@ int main(void) {
     DisableCursor();
     srand((unsigned int)time(NULL));
 
-    World world;
+    worldSeed = (unsigned int)time(NULL);
+    World *world = (World *)calloc(1, sizeof(*world));
+    if (world == NULL) {
+        TraceLog(LOG_ERROR, "Nao foi possivel alocar memoria para o mundo procedural.");
+        CloseWindow();
+        return 1;
+    }
+
     Game game;
-    resetGame(&game, &world);
+    resetGame(&game);
+    loadSectorsAroundPlayer(world, game.player.feet.x, game.player.feet.z);
 
     Camera3D camera = {0};
     camera.fovy = 75.0f;
@@ -600,13 +669,14 @@ int main(void) {
 
         if (!game.gameOver) {
             Vector2 mouseDelta = GetMouseDelta();
-            game.player.yaw += mouseDelta.x * 0.0025f;
+            game.player.yaw -= mouseDelta.x * 0.0025f;
             game.player.pitch -= mouseDelta.y * 0.0025f;
             game.player.pitch = fmaxf(-1.25f, fminf(1.25f, game.player.pitch));
 
             float forward = (IsKeyDown(KEY_W) ? 1.0f : 0.0f) - (IsKeyDown(KEY_S) ? 1.0f : 0.0f);
             float side = (IsKeyDown(KEY_D) ? 1.0f : 0.0f) - (IsKeyDown(KEY_A) ? 1.0f : 0.0f);
-            movePlayer(&game, &world, forward, side, dt);
+            movePlayer(&game, world, forward, side, dt);
+            loadSectorsAroundPlayer(world, game.player.feet.x, game.player.feet.z);
 
             if (IsKeyPressed(KEY_SPACE) && game.player.grounded) {
                 game.player.verticalSpeed = 8.0f;
@@ -616,7 +686,7 @@ int main(void) {
             game.player.verticalSpeed -= 22.0f * dt;
             Vector3 nextFeet = game.player.feet;
             nextFeet.y += game.player.verticalSpeed * dt;
-            if (!playerCollides(&world, nextFeet)) {
+            if (!playerCollides(world, nextFeet)) {
                 game.player.feet.y = nextFeet.y;
                 game.player.grounded = false;
             } else if (game.player.verticalSpeed < 0.0f) {
@@ -629,7 +699,7 @@ int main(void) {
                     for (int x = px0; x <= px1; x++) {
                         int y = (int)floorf(game.player.feet.y);
                         for (; y >= 0; y--) {
-                            if (isSolid(getBlock(&world, x, y, z))) {
+                            if (isSolid(getBlock(world, x, y, z))) {
                                 if ((float)(y + 1) > floorY) floorY = (float)(y + 1);
                                 break;
                             }
@@ -664,13 +734,13 @@ int main(void) {
 
             updateCameraFromPlayer(&game, &camera);
             BlockTarget target = {0};
-            bool hasTarget = findTarget(&world, camera, &target);
+            bool hasTarget = findTarget(world, camera, &target);
 
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hasTarget) {
-                mineBlock(&game, &world, target);
+                mineBlock(&game, world, target);
             }
             if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) && hasTarget) {
-                placeBlock(&game, &world, target);
+                placeBlock(&game, world, target);
             }
 
             if (IsKeyPressed(KEY_E)) workAtSawmill(&game);
@@ -686,13 +756,13 @@ int main(void) {
             BeginDrawing();
             ClearBackground(skyColor(game.dayTime));
             BeginMode3D(camera);
-            drawWorld(&world, &game, &target, hasTarget);
+            drawWorld(world, &game, &target, hasTarget);
             EndMode3D();
-            drawHud(&game, hasTarget, hasTarget ? getBlock(&world, target.x, target.y, target.z) : BLOCK_EMPTY);
+            drawHud(&game, hasTarget, hasTarget ? getBlock(world, target.x, target.y, target.z) : BLOCK_EMPTY);
             EndDrawing();
         } else {
             if (IsKeyPressed(KEY_ENTER)) {
-                resetGame(&game, &world);
+                resetGame(&game);
                 updateCameraFromPlayer(&game, &camera);
             }
 
@@ -704,6 +774,7 @@ int main(void) {
         }
     }
 
+    free(world);
     CloseWindow();
     return 0;
 }

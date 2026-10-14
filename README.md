@@ -4,7 +4,7 @@ Protótipo 3D de sobrevivência em blocos, feito em C com Raylib. A câmera é e
 
 ## Controles
 
-- **WASD**: andar
+- **W / S**: andar para frente / trás; **A / D**: andar para esquerda / direita
 - **Mouse**: olhar ao redor (o cursor fica capturado durante o jogo)
 - **Espaço**: pular
 - **Shift esquerdo**: correr
@@ -42,7 +42,10 @@ copy deps\raylib-win64\raylib-6.0_win64_mingw-w64\lib\raylib.dll build\
 
 ## Sistemas do protótipo
 
-- Mundo voxel 3D com terreno gerado, árvores, água, região arenosa e serraria
+- Mapa voxel procedural de 1024 × 1024 colunas, com relevo por ruído, florestas, água, deserto e serraria inicial
+- Terreno gerado sob demanda em setores de 16 × 16; os setores visitados mantêm as alterações feitas pelo jogador
+- Somente os nove setores próximos são percorridos para desenho a cada quadro
+- Blocos totalmente escondidos por outros não são desenhados, limitando o trabalho gráfico à área visível ao redor do jogador
 - Movimento em primeira pessoa, pulo, gravidade e colisão com blocos
 - Mineração e colocação de blocos com alcance limitado
 - Inventário rápido com terra, pedra, troncos, tábuas e areia
